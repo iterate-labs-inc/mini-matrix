@@ -6,14 +6,14 @@ A working miniature of [MatrAIx](https://arxiv.org/abs/2608.04205)'s persona pip
 |---|---|
 | `world.json` | the world — 13 traits, 3 hidden dials, dependency graph, hard masks. Data, no logic. |
 | `mini_matrix.py` | the machine — sampler, renderer, scene, verifier, harness. Exactly 200 lines. |
-| `trials/` | 900 recorded trials: 100 citizens × 3 models × 3 runs each |
+| `results/` | 900 recorded trials: 100 citizens × 3 models × 3 runs each |
 | `analyze.py` | recomputes majorities and flips from the trial files |
 
 ## Run it
 
 ```
 python3 mini_matrix.py --dry-run --n 3 --show-hidden
-python3 mini_matrix.py --n 100 --models haiku --reps 3 --out trials/trials_haiku.jsonl
+python3 mini_matrix.py --n 100 --models haiku --reps 3 --out results/trials_haiku.jsonl
 python3 analyze.py
 ```
 

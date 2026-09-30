@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Analysis for the Mini Matrix run: the per-model table, majority calls, and
-flip counts, computed from whatever is in trials/."""
+flip counts, computed from whatever is in results/."""
 import json, glob
 from collections import Counter, defaultdict
 
 ORDER = ["haiku", "opus", "gpt-5.6-sol"]  # display order; anything else appends
 
 rows = []
-for path in sorted(glob.glob("trials/*.jsonl")):
+for path in sorted(glob.glob("results/*.jsonl")):
     rows += [json.loads(line) for line in open(path)]
 
 total = len(rows)
