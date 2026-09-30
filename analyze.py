@@ -5,6 +5,7 @@ import json, glob
 from collections import Counter, defaultdict
 
 ORDER = ["haiku", "opus", "gpt-5.6-sol"]  # display order; anything else appends
+LABEL = {"gpt-5.6-sol": "sol"}
 
 rows = []
 for path in sorted(glob.glob("results/*.jsonl")):
@@ -19,14 +20,15 @@ print(f"trials {total}   valid {len(valid)} ({100*len(valid)/total:.1f}%)   "
 cells = defaultdict(list)
 for r in valid:
     cells[(r["persona_id"], r["model"])].append(r["choice"])
-def call(v):
-    # a real majority, or nothing. most_common() alone breaks a 1-1-1 cell by
-    # insertion order, which invents an answer the model never gave.
-    top, n = Counter(v).most_common(1)[0]
-    return top if n * 2 > len(v) else "no majority"
 
 
-majority = {k: call(v) for k, v in cells.items()}
+def majority_of(choices):
+    # A real majority, or "no majority": a 1-1-1 cell has no answer.
+    top, n = Counter(choices).most_common(1)[0]
+    return top if n * 2 > len(choices) else "no majority"
+
+
+majority = {k: majority_of(v) for k, v in cells.items()}
 unanimous = {k: len(set(v)) == 1 for k, v in cells.items()}
 personas = sorted({r["persona_id"] for r in valid})
 models = [m for m in ORDER if any(k[1] == m for k in cells)]
@@ -56,4 +58,4 @@ print(f"\nsoft flips {len(soft)}/{len(personas)}   hard flips {len(hard)}")
 print("\nsample flips:")
 for p, per in soft[:10]:
     print(f"  persona {p:>3}  " + "  ".join(
-        f"{m.replace('gpt-5.6-','')}={per[m]}" for m in models if m in per))
+        f"{LABEL.get(m, m)}={per[m]}" for m in models if m in per))

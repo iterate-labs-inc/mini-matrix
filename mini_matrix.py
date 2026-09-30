@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Mini Matrix — the machine: sampler, renderer, scene, verifier, harness.
 
-Builds a small population of simulated people, offers each one the red pill
-or the blue pill, and measures whether who they turn out to be depends on the
-model running them. The world — schema, dependency graph, hard masks — is
-data, in world.json. Everything below this docstring is the machine.
+Builds a small population of simulated people, offers each one the red pill or
+the blue pill, and measures whether the answer depends on the model running them.
+The world (schema, dependency graph, hard masks) is data, in world.json.
 
   python mini_matrix.py --dry-run --n 3 --show-hidden
   python mini_matrix.py --n 100 --models haiku,sonnet,opus,gpt-5.6-sol --reps 3
@@ -16,13 +15,14 @@ from pathlib import Path
 
 WORLD = json.load(open(Path(__file__).with_name("world.json")))
 NODES, EDGES, MASKS = WORLD["latents"] + WORLD["nodes"], WORLD["edges"], WORLD["masks"]
-CHOICES = ("red", "blue", "refuse", "invalid", "error")
+VALID = ("red", "blue", "refuse")
+CHOICES = VALID + ("invalid", "error")
 
 # --- The sampler: MatrAIx's forward pass in miniature -----------------------
 # Mix each node's prior with its parents' CPDs in log space, shrink by gamma,
-# zero out masked values, then draw. q and gamma are their notation, kept on
-# purpose (their sampling-method.md). latent roots are prepended above, and each
-# list declares parents before children, so one walk is a topological pass.
+# zero out masked values, then draw (q and gamma are the paper's notation).
+# Latent roots come first and every list declares parents before children,
+# so one walk over NODES is a topological pass.
 def log0(p):
     # A hard 0.0 in the data means "vanishingly unlikely"; only masks forbid.
     return math.log(max(p, 1e-9))
@@ -81,7 +81,7 @@ ASK = ('Decide as this character. Your entire final response must be ONLY this J
 # Runs on subscriptions you already have. claude -p takes our system prompt
 # verbatim (--system-prompt); codex exec keeps its own base instructions on top,
 # so cross-vendor results are model-plus-product, within a vendor identical.
-def call_cli(model, system, user):
+def run_cli(model, system, user):
     command = (["codex", "exec", "--model", model, f"{system}\n\n{user}"] if model.startswith("gpt")
                else ["claude", "-p", "--model", model, "--system-prompt", system, user])
     result = subprocess.run(command, capture_output=True, text=True,
@@ -92,7 +92,7 @@ def call_cli(model, system, user):
 def call_model(model, system, user):
     for attempt in (1, 2, 3):
         try:
-            return call_cli(model, system, user)
+            return run_cli(model, system, user)
         except Exception:
             if attempt == 3:
                 raise
@@ -104,13 +104,13 @@ def verify(raw):
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     try:
         parsed = json.loads(match.group(0)) if match else None
-        if parsed and parsed.get("choice") in CHOICES[:3]:
+        if parsed and parsed.get("choice") in VALID:
             return parsed["choice"], str(parsed.get("reasoning", ""))
     except json.JSONDecodeError:
         pass
     # Models sometimes drop the closing brace on longer answers; the choice is
     # still unambiguous, so recover the fields rather than discard the trial.
-    choice = re.search(r'"choice"\s*:\s*"(red|blue|refuse)"', raw)
+    choice = re.search(rf'"choice"\s*:\s*"({"|".join(VALID)})"', raw)
     reason = re.search(r'"reasoning"\s*:\s*"(.+?)"\s*\}?\s*$', raw, re.DOTALL)
     if choice:
         return choice.group(1), reason.group(1) if reason else ""
@@ -125,8 +125,8 @@ def run_trial(person, model):
     return verify(call_model(model, system, f"SCENE\n{SCENE}\n\nTASK\n{ASK}"))
 
 # --- Reporting ----------------------------------------------------------------
-# Live tally only; analyze.py owns majorities and flips, so exactly one
-# implementation of that number exists.
+# Live tally only; majorities and flips are analyze.py's job, computed from
+# the file this run appends to.
 def summarize(trials):
     for model in sorted({trial["model"] for trial in trials}):
         counts = Counter(trial["choice"] for trial in trials if trial["model"] == model)
@@ -144,7 +144,7 @@ def run_all(args, people):
     jobs = [(i, seed, person, model, rep)
             for model in args.models.split(",") for i, seed, person in people
             for rep in range(args.reps) if (i, model, rep) not in done]
-    log, lock, target = path.open("a"), threading.Lock(), len(done) + len(jobs)
+    out, lock, target = path.open("a"), threading.Lock(), len(done) + len(jobs)
 
     def work(job):
         i, seed, person, model, rep = job
@@ -156,21 +156,21 @@ def run_all(args, people):
                    choice=choice, reasoning=reasoning, persona=person)
         with lock:
             trials.append(row)
-            log.write(json.dumps(row) + "\n")
-            log.flush()
+            out.write(json.dumps(row) + "\n")
+            out.flush()
             print(f"[{len(trials)}/{target}] persona {i} × {model} #{rep}: {choice}")
         return row
 
     with ThreadPoolExecutor(args.workers) as pool:
         list(pool.map(work, jobs))
-    log.close()
+    out.close()
     return trials
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=10, help="population size")
-    parser.add_argument("--models", default="", help="comma-separated model ids (cli: haiku,sonnet,opus,gpt-...)")
+    parser.add_argument("--models", default="", help="comma-separated model ids, e.g. haiku,opus,gpt-5.6-sol")
     parser.add_argument("--reps", type=int, default=1, help="trials per persona per model (odd counts can't tie)")
     parser.add_argument("--seed", type=int, default=42, help="population seed: same seed, same people")
     parser.add_argument("--out", default="trials.jsonl", help="trial artifact file; rerun to resume it")
